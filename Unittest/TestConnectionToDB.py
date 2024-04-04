@@ -33,7 +33,6 @@ class TestConnectionToDB(unittest.TestCase):
         self.assertRegex(str(cm.exception),
                          r".*FATAL:  password authentication failed for user \"{}\".*".format(self.DB_TEST_USERNAME))
 
-
     def test_missing_password(self):
         with self.assertRaises(psycopg2.OperationalError) as cm:
             psycopg2.connect(dbname=self.DB_NAME, user=self.DB_TEST_USERNAME, host=self.DB_HOST,
@@ -94,7 +93,6 @@ class TestConnectionToDB(unittest.TestCase):
         self.assertRegex(str(cm.exception),
                          r".*FATAL:  database \"{}\" does not exist".format(invalid_db_name))
 
-    # странное поведение
     def test_missing_db_name(self):
         with self.assertRaises(psycopg2.OperationalError) as cm:
             psycopg2.connect(user=self.DB_TEST_USERNAME, host=self.DB_HOST, port=self.DB_PORT,
@@ -102,16 +100,29 @@ class TestConnectionToDB(unittest.TestCase):
         self.assertRegex(str(cm.exception),
                          r".*FATAL:  database \"{}\" does not exist".format(self.DB_TEST_USERNAME))
 
-    def test_several_connections(self):
+    def test_max_connections(self):
         with self.assertRaises(psycopg2.OperationalError) as cm:
             SimpleConnectionPool(minconn=100, maxconn=110, dbname=self.DB_NAME, user=self.DB_TEST_USERNAME,
                                  host=self.DB_HOST, port=self.DB_PORT, password=self.DB_TEST_PASSWORD)
         self.assertRegex(str(cm.exception),
                          r".*FATAL:  remaining connection slots are reserved for roles with the SUPERUSER attribute")
 
-    def test_max_connections(self):
+    def test_several_connections(self):
         SimpleConnectionPool(minconn=5, maxconn=10, dbname=self.DB_NAME, user=self.DB_TEST_USERNAME,
                              host=self.DB_HOST, port=self.DB_PORT, password=self.DB_TEST_PASSWORD)
+
+    def test_block_user(self):
+        conn = psycopg2.connect(dbname=self.DB_NAME, user=self.DB_ROOT_USERNAME, host=self.DB_HOST, port=self.DB_PORT,
+                                password=self.DB_ROOT_PASSWORD)
+        cur = conn.cursor()
+        cur.execute("ALTER ROLE {} WITH NOLOGIN;".format(self.DB_TEST_USERNAME))
+        conn.commit()
+        conn.close()
+        with self.assertRaises(psycopg2.OperationalError) as cm:
+            psycopg2.connect(dbname=self.DB_NAME, user=self.DB_TEST_USERNAME, host=self.DB_HOST, port=self.DB_PORT,
+                         password=self.DB_TEST_PASSWORD)
+        self.assertRegex(str(cm.exception),
+                         r".*FATAL:  role \"{}\" is not permitted to log in".format(self.DB_TEST_USERNAME))
 
     def tearDown(self):
         conn = psycopg2.connect(dbname=self.DB_NAME, user=self.DB_ROOT_USERNAME, host=self.DB_HOST, port=self.DB_PORT,
@@ -120,3 +131,6 @@ class TestConnectionToDB(unittest.TestCase):
         cur.execute("DROP USER IF EXISTS {};".format(self.DB_TEST_USERNAME))
         conn.commit()
         conn.close()
+
+if __name__ == '__main__':
+    unittest.main()
